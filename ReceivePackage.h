@@ -4,6 +4,16 @@
 #include "Arduino.h"
 class ReceivePackage
 {
+public:
+    float vx; //上層給速度x
+    float vy; //上層給速度y(不用)
+    float w;  //上層給w
+
+    ReceivePackage();
+    void CheckConnect(int target);
+    ~ReceivePackage();
+    void ReceiveData(unsigned char data, float *vx, float *vy, float *w);
+
 private:
     unsigned char databuf[20]; // 用來儲存收進來的 data byte
     int count = 0;
@@ -35,21 +45,9 @@ private:
     int interger_w = 0;
     int float_w = 0;
 
-    double re_vx; 
+    double re_vx;
     double re_vy;
     double re_w;
-
-public:
-
-    float vx; //上層給速度x
-    float vy;     //上層給速度y(不用)
-    float w;      //上層給w
-
-    ReceivePackage();
-    void CheckConnect(int target);
-    ~ReceivePackage();
-    void ReceiveData(unsigned char data, float *vx, float *vy, float *w);
 };
 
 #endif
-
