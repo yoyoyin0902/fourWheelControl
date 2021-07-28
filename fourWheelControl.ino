@@ -4,6 +4,7 @@
 #include "PIDController.h"
 #include "ReceivePackage.h"
 #include "IMU.h"
+#include "Odom.h"
 #include <math.h>
 
 // ========================== Motor mode ==============================
@@ -26,11 +27,12 @@
 SRampGenerator rampGenerator;
 ReceivePackage recData;
 IMU imu;
+Odometry Odom;
 
 LS7366 rightEncoder(CS1);
 LS7366 leftEncoder(CS3);
-PIDContorller pidLeft(1000, 60, 0, 4095, -4095);   //Kp, Ki, Kd, max, min
-PIDContorller pidRight(1000, 60, 00, 4095, -4095); //Kp, Ki, Kd, max, min
+PIDContorller pidLeft(1000, 60, 0, 4095, -4095);  //Kp, Ki, Kd, max, min
+PIDContorller pidRight(1000, 60, 0, 4095, -4095); //Kp, Ki, Kd, max, min
 
 long count_CSLeft = 0;
 long count_CSRight = 0;
@@ -46,6 +48,9 @@ double error_right_I = 0;
 double old_want_left = 0;
 double old_want_right = 0;
 
+float delta_PL = 0;
+float delta_PR = 0;
+
 // ==========================  PID ================================
 float vl = 0, vr = 0;
 IntervalTimer speed_timer, imu_timer;
@@ -54,7 +59,7 @@ float _now_vl = 0, _now_vr = 0;
 float pre_vl_error = 0, pre_vr_error = 0;
 
 // ========================== Parameter ===========================
-const double Two_Wheel_Length = 0.53;  // 兩輪間距 (m)
+const float Two_Wheel_Length = 400;  // 兩輪間距 (mm)
 const float Wheel_R = 0.145;           // 輪半徑  (m)
 const int wheelPluse = 4000.0;         // 皮帶輪1:2 pluse數
 const float ADJUST_R_WHEEL_RATE = 1.0; // 左排輪子校正係數
@@ -79,9 +84,23 @@ unsigned long lastCheckTime = 0; //判斷有無連線用 (儲存上次判斷的�
 bool speedTimerFlag = false;
 bool imuTimerFlag = false;
 
-// ============================== IMU ==================================
+// ============================ Odometry ================================
+// typedef enum MoveAction
+// {
+//   STOP,
+//   FORWORD,
+//   BACK,
+//   TURN,
+//   SPIN
+// };
+// MoveAction _Packet_Action = STOP;
+// float ADJUST_R_WHEEL_FACTOR = 1;
+// float ADJUST_L_WHEEL_FACTOR = 1;
+// float RightPosPre = 0;
+// float LeftPosPre = 0;
 
 
+// ============================ Timer ================================
 void speedTimerISR()
 {
   //speed_timer 的 Interupt Sub-Routine
@@ -97,11 +116,12 @@ void imuSendISR()
   imuTimerFlag = true;
 }
 
+// ============================ Start ================================
 void setup()
 {
   Serial.begin(115200);
-  // Serial1.begin(115200);
-  Serial5.begin(115200); //IMU
+  Serial1.begin(115200); //IMU
+  // Serial5.begin(115200);
   SPI.begin();
 
   analogWriteResolution(12); //ADC解析度調整為12bit 0.00122
@@ -137,7 +157,7 @@ void setup()
 
   //BK & EN
   digitalWrite(Motor_enable, LOW);
-  digitalWrite(Motor_Brake, LOW);
+  digitalWrite(Motor_Brake, HIGH);
 
   //timer
   speed_timer.begin(speedTimerISR, 5000); //5ms 進一次 speedTimerISR
@@ -171,8 +191,8 @@ void loop()
 
   // Serial.print("yaw: ");
   // Serial.println(imu.yaw);
-  Serial.print("final_yaw: ");
-  Serial.println(imu.final_yaw);
+  // Serial.print("final_yaw: ");
+  // Serial.println(imu.final_yaw);
   // sendIMUData(123.456, 111.234, 345.678, 123.456, 123.456, 123.456, 123.456, 123.456);
 }
 
@@ -229,7 +249,7 @@ uint16_t new_VtoPwm_Right(float V)
 // ========================== EncoderReceive ===========================
 void encoder_receive()
 {
-  //里程計累積function 10ms running
+  //Encoder累積function 10ms running
   count_CSRight = (long)rightEncoder.read_counter();
   count_CSLeft = (long)leftEncoder.read_counter();
 
@@ -247,6 +267,10 @@ void encoder_receive()
   _now_vl = vl;
   _now_vr = vr;
 
+  delta_PL = (count_CSL_dis / 2.0) * Ressolution;
+  delta_PR = (count_CSR_dis / 2.0) * Ressolution;
+
+//  Odom.Odm_Calu(delta_PR, delta_PL, imu.final_yaw);
   // x_world = x_world + ((count_CSL_dis + count_CSR_dis) / 2.0) * Ressolution * 100.0 * cos(theta); //單位 cm
   // y_world = y_world + ((count_CSL_dis + count_CSR_dis) / 2.0) * Ressolution * 100.0 * sin(theta);
   count_CSLeft_old = count_CSLeft;
@@ -255,6 +279,32 @@ void encoder_receive()
   // Serial1.print("real Vl = ");Serial1.println(_now_vl);
   // Serial1.print("real Vr = ");Serial1.println(_now_vr);
 }
+
+// ============================ Odometry ================================
+// int Action_Prediction()
+// {
+//   if (vx == 0 && w == 0)
+//   {
+//     _Packet_Action = STOP;
+//   }
+//   else if (vx != 0 && w == 0)
+//   {
+//     if (vx > 0)
+//       _Packet_Action = FORWORD;
+//     else
+//       _Packet_Action = BACK;
+//   }
+//   else if (vx == 0 & w != 0)
+//   {
+//     _Packet_Action = SPIN;
+//   }
+//   else
+//   {
+//     _Packet_Action = TURN;
+//   }
+// }
+
+
 
 // ========================== *ReceivePackage ===========================
 void serialEvent()
@@ -270,12 +320,12 @@ void serialEvent()
 }
 
 // ========================== IMUReceive ===========================
-void serialEvent5()
+void serialEvent1()
 {
-  if (Serial5.available())
+  if (Serial1.available())
   {
-    imu.rxBuf[imu.rxIndex++] = Serial5.read();
-    // Serial.println(imu.yaw);
+    imu.rxBuf[imu.rxIndex++] = Serial1.read();
+    //Serial.println(imu.yaw);
   }
 }
 
@@ -299,6 +349,7 @@ int *Packet_Decorder(float value)
   // Serial.print(" temp_packet[4]: ");
   // Serial.println(temp_packet[4]);
 
+  //abs不能用ㄚㄚㄚ
   //  float value2 = value;
   //  if (value < 0)
   //    value2 *= -1.0;
