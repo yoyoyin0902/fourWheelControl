@@ -31,50 +31,48 @@ uint16_t IMU::getCRC(const void *src, int len)
     return CRC;
 }
 
+
 void IMU::receiveIMU(uint8_t *revData)
 {
     if (rxIndex >= 82)
-    {
+    { //0x91 DATD_ID
         dataFrame_t frame;
-        memcpy(&frame, &rxBuf[rxIndex - 82], 82); //讀到的資料複製到frame裡
-        if (frame.premable == 0x5A && frame.type == 0xA5 && (getCRC(&frame, 82) == frame.crc))
+        memcpy(&frame, &rxBuf[rxIndex - 82], 82);
+        if (frame.premable == 0x5A && frame.type == 0xA5)
         {
-            // Serial.println("imu ok");
-            IMUSOL_t *payload = (IMUSOL_t *)frame.payload;
-            //加速度
-            acc_x = payload->acc[0];
-            acc_y = payload->acc[1];
-            acc_z = payload->acc[2];
-            //角速度
-            gyr_x = payload->gyr[0];
-            gyr_y = payload->gyr[1];
-            gyr_z = payload->gyr[2];
-            //磁場速度
-            mag_x = payload->mag[0];
-            mag_y = payload->mag[1];
-            mag_z = payload->mag[2];
+            if (getCRC(&frame, 82) == frame.crc)
+            {
+                IMUSOL_t *payload = (IMUSOL_t *)frame.payload;
+                acc_x = payload->acc[0];
+                acc_y = payload->acc[1];
+                acc_z = payload->acc[2];
+                //角速度
+                gyr_x = payload->gyr[0];
+                gyr_y = payload->gyr[1];
+                gyr_z = payload->gyr[2];
+                //磁場速度
+                mag_x = payload->mag[0];
+                mag_y = payload->mag[1];
+                mag_z = payload->mag[2];
 
-            roll = payload->eul[0];
-            pitch = payload->eul[1];
-            yaw = payload->eul[2];
-            //四元數
-            quaternion_w = payload->quaternion[0];
-            quaternion_x = payload->quaternion[1];
-            quaternion_y = payload->quaternion[2];
-            quaternion_z = payload->quaternion[3];
+                roll = payload->eul[0];
+                pitch = payload->eul[1];
+                yaw = payload->eul[2];
+                //四元數
+                quaternion_w = payload->quaternion[0];
+                quaternion_x = payload->quaternion[1];
+                quaternion_y = payload->quaternion[2];
+                quaternion_z = payload->quaternion[3];
 
-            //yaw校正
-            if (yaw > 0)
-                yaw = yaw + 360;
-            final_yaw = yaw;
-            if (final_yaw >= 180)
-                final_yaw = final_yaw - 360;
-            final_yaw *= -1;
-
-            //   Serial.println("x:" + String(payload->acc_x));
-            //   Serial.println("y:" + String(payload->acc_y));
-            //   Serial.println("z:" + String(payload->acc_z));
+                //yaw校正
+                if (yaw > 0)
+                    yaw = yaw + 360;
+                final_yaw = yaw;
+                if (final_yaw >= 180)
+                    final_yaw = final_yaw - 360;
+                final_yaw *= -1;
+            }
+            rxIndex = 0;
         }
-        rxIndex = 0;
     }
 }

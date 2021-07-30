@@ -28,11 +28,16 @@ SRampGenerator rampGenerator;
 ReceivePackage recData;
 IMU imu;
 Odometry Odom;
+PIDContorller pidLeftclr;
+PIDContorller pidRightclr;
 
 LS7366 rightEncoder(CS1);
 LS7366 leftEncoder(CS3);
-PIDContorller pidLeft(1000, 60, 0, 4095, -4095);  //Kp, Ki, Kd, max, min
-PIDContorller pidRight(1000, 60, 0, 4095, -4095); //Kp, Ki, Kd, max, min
+PIDContorller pidLeft(800, 10, 50, 4095, -4095);  //Kp, Ki, Kd, max, min
+PIDContorller pidRight(800, 10, 50, 4095, -4095); //Kp, Ki, Kd, max, min
+// PIDContorller pidLeftclr();
+// PIDContorller pidRightclr();
+
 
 long count_CSLeft = 0;
 long count_CSRight = 0;
@@ -59,7 +64,7 @@ float _now_vl = 0, _now_vr = 0;
 float pre_vl_error = 0, pre_vr_error = 0;
 
 // ========================== Parameter ===========================
-const float Two_Wheel_Length = 400;  // 兩輪間距 (mm)
+const float Two_Wheel_Length = 0.4;  // 兩輪間距 (mm)
 const float Wheel_R = 0.145;           // 輪半徑  (m)
 const int wheelPluse = 4000.0;         // 皮帶輪1:2 pluse數
 const float ADJUST_R_WHEEL_RATE = 1.0; // 左排輪子校正係數
@@ -68,7 +73,7 @@ const float ADJUST_L_WHEEL_RATE = 1.0; // 右排輪子校正係數
 //V & W
 double v_right = 0;
 double v_left = 0;
-// double x_world = 0;
+// double x_world = 0;LOW
 // double y_world = 0;
 
 //encoder
@@ -85,19 +90,7 @@ bool speedTimerFlag = false;
 bool imuTimerFlag = false;
 
 // ============================ Odometry ================================
-// typedef enum MoveAction
-// {
-//   STOP,
-//   FORWORD,
-//   BACK,
-//   TURN,
-//   SPIN
-// };
-// MoveAction _Packet_Action = STOP;
-// float ADJUST_R_WHEEL_FACTOR = 1;
-// float ADJUST_L_WHEEL_FACTOR = 1;
-// float RightPosPre = 0;
-// float LeftPosPre = 0;
+
 
 
 // ============================ Timer ================================
@@ -111,8 +104,8 @@ void speedTimerISR()
 
 void imuSendISR()
 {
-  sendIMUData(12.34, 12.34, 12.34, 12.34, imu.final_yaw);
-  sendIMUData_String(12.34, 12.34, 12.34, 12.34, imu.final_yaw);
+//  /sendIMUData(imu.roll, imu.pitch, 12.34, 12.34, imu.final_yaw);
+//  sendIMUData_String(12.34, 12.34, 12.34, 12.34, imu.final_yaw);
   imuTimerFlag = true;
 }
 
@@ -182,8 +175,7 @@ void loop()
   {
     speedTimerFlag = false;
   }
-  imu.receiveIMU(imu.rxBuf);
-  delay(1);
+
   if (imuTimerFlag)
   {
     imuTimerFlag = false;
@@ -198,6 +190,7 @@ void loop()
 
 void setWheelCar(float v, float w) // V[m/s]  W[rad/s]
 {
+  
   //Two_Wheel_Kinematics
   vr = v + (w * Two_Wheel_Length / 2.0f); //Vr = Right PID Target
   vl = v - (w * Two_Wheel_Length / 2.0f); //Vl = Left PID Target
@@ -205,11 +198,13 @@ void setWheelCar(float v, float w) // V[m/s]  W[rad/s]
   _want_vr = vr * ADJUST_R_WHEEL_RATE;
   _want_vl = vl * ADJUST_L_WHEEL_RATE;
 
+
   float pid_output_Left = pidLeft.calculate(_want_vl, _now_vl);   //PID control
   float pid_output_Right = pidRight.calculate(_want_vr, _now_vr); //PID control
 
   new_VtoPwm_Left(pid_output_Left);
   new_VtoPwm_Right(pid_output_Right);
+
 }
 
 /**************************SetPWM************************************/
@@ -257,6 +252,8 @@ void encoder_receive()
   long count_CSL_dis = count_CSLeft - count_CSLeft_old;
   long count_CSR_dis = count_CSRight - count_CSRight_old;
 
+  //sendIMUData(count_CSRight, count_CSR_dis, 0, 0, 0);
+
   // 輪胎圓周(m)/一圈轉幾格pulse /4000 WheelPluse
   double Ressolution = (2 * PI * Wheel_R) / wheelPluse;
 
@@ -266,6 +263,7 @@ void encoder_receive()
 
   _now_vl = vl;
   _now_vr = vr;
+
 
   delta_PL = (count_CSL_dis / 2.0) * Ressolution;
   delta_PR = (count_CSR_dis / 2.0) * Ressolution;
@@ -281,30 +279,6 @@ void encoder_receive()
 }
 
 // ============================ Odometry ================================
-// int Action_Prediction()
-// {
-//   if (vx == 0 && w == 0)
-//   {
-//     _Packet_Action = STOP;
-//   }
-//   else if (vx != 0 && w == 0)
-//   {
-//     if (vx > 0)
-//       _Packet_Action = FORWORD;
-//     else
-//       _Packet_Action = BACK;
-//   }
-//   else if (vx == 0 & w != 0)
-//   {
-//     _Packet_Action = SPIN;
-//   }
-//   else
-//   {
-//     _Packet_Action = TURN;
-//   }
-// }
-
-
 
 // ========================== *ReceivePackage ===========================
 void serialEvent()
@@ -312,7 +286,7 @@ void serialEvent()
   if (Serial.available())
   {
     unsigned char Data = Serial.read();
-    recData.ReceiveData(Data, &vx, &vy, &w); //only use vx and w
+    recData.ReceiveData(Data, &vx, &vy, &w); //only use vx and w    
     // Serial1.println(vx);
     // Serial1.println(" ");
     // Serial1.println(w);
@@ -325,7 +299,10 @@ void serialEvent1()
   if (Serial1.available())
   {
     imu.rxBuf[imu.rxIndex++] = Serial1.read();
-    //Serial.println(imu.yaw);
+    imu.receiveIMU(imu.rxBuf);
+//    sendIMUData(imu.final_yaw, 123.56, 1, 0, 0);
+    // Serial.println(imu.final_yaw);
+    
   }
 }
 
@@ -340,23 +317,6 @@ int *Packet_Decorder(float value)
   temp_packet[3] = ((int(fabs(value) * 1000) % 1000) & 0xFF00) >> 8; //小數點取3位
   temp_packet[4] = int(fabs(value) * 1000) % 1000;
 
-  // Serial.print(" temp_packet[1]: ");
-  // Serial.println(temp_packet[1]);
-  // Serial.print(" temp_packet[2]: ");
-  // Serial.println(temp_packet[2]);
-  // Serial.print(" temp_packet[3]: ");
-  // Serial.println(temp_packet[3]);
-  // Serial.print(" temp_packet[4]: ");
-  // Serial.println(temp_packet[4]);
-
-  //abs不能用ㄚㄚㄚ
-  //  float value2 = value;
-  //  if (value < 0)
-  //    value2 *= -1.0;
-  //  temp_packet[1] = ((int(value2) & 0xFF00)) >> 8;
-  //  temp_packet[2] = int(value2);
-  //  temp_packet[3] = ((int(value2 * 1000) % 1000) & 0xFF00) >> 8;
-  //  temp_packet[4] = int(value2 * 1000) % 1000;
   return temp_packet;
 }
 
@@ -395,20 +355,5 @@ void sendIMUData(float _v, float _w, float _world_x, float _world_y, float _worl
   // for (int i = 0; i < 5; ++i)
   //   SendData[i + 2] = *(getPacketData1 + i);
 
-  Serial.write(SendData, sizeof(SendData));
-}
-
-void sendIMUData_String(float _v, float _w, float _world_x, float _world_y, float _world_yaw) //回傳給車子解碼後的速度跟角速度
-{
-  // Serial.print("EC;");
-  // Serial.print(_v);
-  // Serial.print(",");
-  // Serial.print(_w);
-  // Serial.print(",");
-  // Serial.print(_world_x / 1000.0);
-  // Serial.print(",");
-  // Serial.print(_world_y / 1000.0);
-  // Serial.print(",");
-  // Serial.print(_world_yaw);
-  // Serial.println(";CE");
+   Serial.write(SendData, sizeof(SendData));
 }
